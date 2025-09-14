@@ -1,5 +1,4 @@
 ﻿using ConsoleApp9.Services;
-using System.Globalization;
 using Telegram.Bot;
 using Telegram.Bot.Types.ReplyMarkups;
 
@@ -22,7 +21,7 @@ public class Scheduler
                 while (!ct.IsCancellationRequested && (_cfg.MaxRuns == null || runs < _cfg.MaxRuns))
                 {
                         var nowLocal = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TZ);
-                        var next = NextTrigger(nowLocal);
+                        var next = NextTick(nowLocal);
                         Console.WriteLine($"[Scheduler] Next trigger: {next:yyyy-MM-dd HH:mm:ss zzz}");
                         try { await Task.Delay(next - nowLocal, ct); } catch { }
                         if (ct.IsCancellationRequested) break;
@@ -82,37 +81,42 @@ new [] { InlineKeyboardButton.WithCallbackData("Отписаться", "unsubscr
 		await _notifs.SaveAsync(nr);
 	}
 
-	private DateTimeOffset NextTrigger(DateTimeOffset nowLocal)
-	{
-		var unit = _cfg.IntervalUnit;
-		var val = Math.Max(1, _cfg.IntervalValue);
-		var next = unit switch
-		{
-			"year" => NextYearly(nowLocal),
-			"month" => NextMonthly(nowLocal),
-			"week" => NextWeekly(nowLocal),
-			"day" => NextDaily(nowLocal),
-			"hour" => NextHourly(nowLocal),
-			"minute" => NextMinutely(nowLocal),
-			_ => NextMonthly(nowLocal)
-		};
+        private DateTimeOffset NextPeriodStart(DateTimeOffset nowLocal)
+        {
+                var unit = _cfg.IntervalUnit;
+                var val = Math.Max(1, _cfg.IntervalValue);
+                var next = unit switch
+                {
+                        "year" => NextYearly(nowLocal),
+                        "month" => NextMonthly(nowLocal),
+                        "week" => NextWeekly(nowLocal),
+                        "day" => NextDaily(nowLocal),
+                        "hour" => NextHourly(nowLocal),
+                        "minute" => NextMinutely(nowLocal),
+                        _ => NextMonthly(nowLocal)
+                };
 
-		// Add (val-1) intervals to support value>1
-		for (int i = 1; i < val; i++)
-		{
-			next = unit switch
-			{
-				"year" => next.AddYears(1),
-				"month" => next.AddMonths(1),
-				"week" => next.AddDays(7),
-				"day" => next.AddDays(1),
-				"hour" => next.AddHours(1),
-				"minute" => next.AddMinutes(1),
-				_ => next
-			};
-		}
-		return next;
-	}
+                // Add (val-1) intervals to support value>1
+                for (int i = 1; i < val; i++)
+                {
+                        next = unit switch
+                        {
+                                "year" => next.AddYears(1),
+                                "month" => next.AddMonths(1),
+                                "week" => next.AddDays(7),
+                                "day" => next.AddDays(1),
+                                "hour" => next.AddHours(1),
+                                "minute" => next.AddMinutes(1),
+                                _ => next
+                        };
+                }
+                return next;
+        }
+
+        private DateTimeOffset NextTick(DateTimeOffset nowLocal)
+        {
+                return nowLocal.AddSeconds(Math.Max(1, _cfg.LocalIntervalSeconds));
+        }
 
 	private DateTimeOffset NextYearly(DateTimeOffset now)
 	{
@@ -180,17 +184,20 @@ new [] { InlineKeyboardButton.WithCallbackData("Отписаться", "unsubscr
 
 	private static int Clamp(int v, int lo, int hi) => Math.Min(Math.Max(v, lo), hi);
 
-	private string CurrentPeriodKey(DateTimeOffset nowLocal)
-	{
-		return _cfg.IntervalUnit switch
-		{
-			"year" => nowLocal.Year.ToString(),
-			"month" => $"{nowLocal:yyyy-MM}",
-			"week" => $"{ISOWeek.GetYear(nowLocal.Date)}-W{ISOWeek.GetWeekOfYear(nowLocal.Date):D2}",
-			"day" => $"{nowLocal:yyyy-MM-dd}",
-			"hour" => $"{nowLocal:yyyy-MM-dd HH}",
-			"minute" => $"{nowLocal:yyyy-MM-dd HH:mm}",
-			_ => $"{nowLocal:yyyy-MM}"
-		};
-	}
+        private string CurrentPeriodKey(DateTimeOffset nowLocal)
+        {
+                var val = Math.Max(1, _cfg.IntervalValue);
+                var next = NextPeriodStart(nowLocal);
+                var start = _cfg.IntervalUnit switch
+                {
+                        "year" => next.AddYears(-val),
+                        "month" => next.AddMonths(-val),
+                        "week" => next.AddDays(-7 * val),
+                        "day" => next.AddDays(-val),
+                        "hour" => next.AddHours(-val),
+                        "minute" => next.AddMinutes(-val),
+                        _ => next.AddMonths(-val)
+                };
+                return start.ToString("O");
+        }
 }
