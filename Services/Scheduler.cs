@@ -16,18 +16,20 @@ public class Scheduler
 	public Scheduler(ITelegramBotClient bot, JsonStore<UsersRoot> users, JsonStore<NotificationsRoot> notifs, JsonStore<MetaRoot> meta, Settings cfg)
 	{ _bot = bot; _users = users; _notifs = notifs; _meta = meta; _cfg = cfg; }
 
-	public async Task RunAsync(CancellationToken ct)
-	{
-		while (!ct.IsCancellationRequested)
-		{
-			var nowLocal = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TZ);
-			var next = NextTrigger(nowLocal);
-			Console.WriteLine($"[Scheduler] Next trigger: {next:yyyy-MM-dd HH:mm:ss zzz}");
-			try { await Task.Delay(next - nowLocal, ct); } catch { }
-			if (ct.IsCancellationRequested) break;
-			try { await OnTickAsync(ct); } catch (Exception ex) { Console.WriteLine($"[Scheduler] Tick error: {ex}"); }
-		}
-	}
+        public async Task RunAsync(CancellationToken ct)
+        {
+                int runs = 0;
+                while (!ct.IsCancellationRequested && (_cfg.MaxRuns == null || runs < _cfg.MaxRuns))
+                {
+                        var nowLocal = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TZ);
+                        var next = NextTrigger(nowLocal);
+                        Console.WriteLine($"[Scheduler] Next trigger: {next:yyyy-MM-dd HH:mm:ss zzz}");
+                        try { await Task.Delay(next - nowLocal, ct); } catch { }
+                        if (ct.IsCancellationRequested) break;
+                        try { await OnTickAsync(ct); } catch (Exception ex) { Console.WriteLine($"[Scheduler] Tick error: {ex}"); }
+                        runs++;
+                }
+        }
 
 	private async Task OnTickAsync(CancellationToken ct)
 	{
